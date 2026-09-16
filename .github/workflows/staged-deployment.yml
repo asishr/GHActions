@@ -3,6 +3,15 @@ name: Demo - Staged deployment
 # Create Test, Load-Test, and Production environments in repository settings.
 # Add a required reviewer and a main-branch deployment rule to Production.
 on:
+  # Temporary branch trigger lets this workflow be tested before it reaches main.
+  # Remove this push trigger after the demo branch is merged.
+  push:
+    branches:
+      - feature/github-actions-cicd-demo
+    paths:
+      - '.github/workflows/staged-deployment.yml'
+      - '.github/workflows/deploy-reusable.yml'
+      - 'sample-app/**'
   workflow_dispatch:
     inputs:
       environment:
@@ -52,7 +61,7 @@ jobs:
   deploy-test:
     name: Deploy to Test
     needs: build
-    if: ${{ inputs.environment == 'Test' || inputs.environment == 'Load-Test' || inputs.environment == 'Production' }}
+    if: ${{ github.event_name == 'push' || inputs.environment == 'Test' || inputs.environment == 'Load-Test' || inputs.environment == 'Production' }}
     uses: ./.github/workflows/deploy-reusable.yml
     with:
       environment: Test
@@ -87,7 +96,7 @@ jobs:
     steps:
       - name: Write summary
         env:
-          TARGET_ENVIRONMENT: ${{ inputs.environment }}
+          TARGET_ENVIRONMENT: ${{ github.event_name == 'push' && 'Test' || inputs.environment }}
           DEPLOYED_VERSION: ${{ github.sha }}
           TEST_RESULT: ${{ needs.deploy-test.result }}
           LOAD_TEST_RESULT: ${{ needs.load-test.result }}
