@@ -1,0 +1,80 @@
+name: Demo - Reusable deployment
+
+# Reusable workflow that simulates deploying the sample-app container image
+# to a target environment. Called by staged-deployment.yml for each stage.
+on:
+  workflow_call:
+    inputs:
+      environment:
+        description: 'Name of the GitHub environment to deploy to'
+        type: string
+        required: true
+      image-tag:
+        description: 'Tag of the sample-app image to deploy'
+        type: string
+        required: true
+      environment-url:
+        description: 'Public URL of the environment, surfaced on the deployment'
+        type: string
+        required: true
+    outputs:
+      deployed-version:
+        description: 'The image tag that was deployed'
+        value: ${{ jobs.deploy.outputs.deployed-version }}
+      deployment-time:
+        description: 'The UTC time when deployment completed'
+        value: ${{ jobs.deploy.outputs.deployment-time }}
+
+permissions:
+  contents: read
+  packages: read
+
+jobs:
+  deploy:
+    name: 🚀 Deploy to ${{ inputs.environment }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    environment:
+      name: ${{ inputs.environment }}
+      url: ${{ inputs.environment-url }}
+    outputs:
+      deployed-version: ${{ steps.deploy.outputs.version }}
+      deployment-time: ${{ steps.deploy.outputs.time }}
+    steps:
+      - name: Pull image
+        env:
+          IMAGE: ghcr.io/${{ github.repository }}/sample-app:${{ inputs.image-tag }}
+        run: echo "🔎 Pulling $IMAGE"
+
+      # In a real pipeline this step would call `kubectl`, `az webapp deploy`,
+      # a Terraform plan/apply, etc. It is simulated here so the workflow runs
+      # end-to-end without needing real infrastructure.
+      - name: Deploy
+        id: deploy
+        env:
+          TARGET_ENVIRONMENT: ${{ inputs.environment }}
+          IMAGE_TAG: ${{ inputs.image-tag }}
+        run: |
+          echo "🚀 Deploying image $IMAGE_TAG to $TARGET_ENVIRONMENT..."
+          sleep 5
+          echo "version=$IMAGE_TAG" >> "$GITHUB_OUTPUT"
+          echo "time=$(date --utc --iso-8601=seconds)" >> "$GITHUB_OUTPUT"
+
+      - name: Smoke test
+        env:
+          TARGET_ENVIRONMENT: ${{ inputs.environment }}
+          ENVIRONMENT_URL: ${{ inputs.environment-url }}
+        run: |
+          echo "🩺 Checking $ENVIRONMENT_URL/health ..."
+          sleep 2
+          echo "✅ $TARGET_ENVIRONMENT is healthy"
+
+      - name: Write deployment summary
+        env:
+          TARGET_ENVIRONMENT: ${{ inputs.environment }}
+          IMAGE_TAG: ${{ inputs.image-tag }}
+          DEPLOYMENT_TIME: ${{ steps.deploy.outputs.time }}
+        run: |
+          echo "### 🚀 $TARGET_ENVIRONMENT deployment" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Version: \`$IMAGE_TAG\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Completed: $DEPLOYMENT_TIME" >> "$GITHUB_STEP_SUMMARY"

@@ -1,0 +1,145 @@
+name: CI - Build, Lint & Test
+
+# Continuous Integration for the sample-app.
+# Runs on every push/PR that touches the app, plus a manual trigger for demos.
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'sample-app/**'
+      - '.github/workflows/ci.yml'
+  pull_request:
+    branches: [main]
+    paths:
+      - 'sample-app/**'
+  workflow_dispatch:
+
+# Cancel superseded runs on the same branch/PR to save minutes.
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  packages: write # needed to push the image to GitHub Container Registry
+
+defaults:
+  run:
+    working-directory: sample-app
+
+env:
+  IMAGE_NAME: ghcr.io/${{ github.repository }}/sample-app
+
+jobs:
+  lint:
+    name: 🧹 Lint
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: sample-app/package-lock.json
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Run ESLint
+        run: npm run lint
+
+  test:
+    name: 🧪 Test (Node ${{ matrix.node-version }})
+    needs: lint
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        node-version: ['18.x', '20.x']
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js ${{ matrix.node-version }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node-version }}
+          cache: 'npm'
+          cache-dependency-path: sample-app/package-lock.json
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Run unit tests
+        run: npm test
+
+      - name: Upload coverage report
+        if: matrix.node-version == '20.x'
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-report
+          path: sample-app/coverage
+          retention-days: 7
+
+  security-scan:
+    name: 🔐 Dependency audit
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: sample-app/package-lock.json
+
+      - name: Install dependencies
+        run: npm install
+
+      # continue-on-error keeps this informative during the demo instead of blocking the pipeline
+      - name: Run npm audit
+        run: npm audit --audit-level=high
+        continue-on-error: true
+
+  build-and-push-image:
+    name: 📦 Build & push container image
+    needs: [test, security-scan]
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    outputs:
+      image-tag: ${{ steps.meta.outputs.tag }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set image tag
+        id: meta
+        run: echo "tag=${{ github.sha }}" >> "$GITHUB_OUTPUT"
+
+      - name: Build and push image
+        uses: docker/build-push-action@v6
+        with:
+          context: sample-app
+          build-args: |
+            APP_VERSION=${{ steps.meta.outputs.tag }}
+          push: true
+          tags: |
+            ${{ env.IMAGE_NAME }}:${{ steps.meta.outputs.tag }}
+            ${{ env.IMAGE_NAME }}:latest
+
+      - name: Job summary
+        run: |
+          echo "### 📦 Image published" >> "$GITHUB_STEP_SUMMARY"
+          echo "\`${{ env.IMAGE_NAME }}:${{ steps.meta.outputs.tag }}\`" >> "$GITHUB_STEP_SUMMARY"

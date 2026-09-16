@@ -18,6 +18,14 @@ Repo for the `GitHub Actions Fundamentals` training.
 
 Please follow [these instructions](GettingReady.md) and make sure you have set up everything correctly following the [prerequisites](#-prerequisites).
 
+## 🚀 End-to-end CI/CD demo
+
+[`sample-app/`](sample-app) contains a small Node.js/Express app plus a full CI/CD pipeline you can use as a reference or a live demo:
+
+- [`.github/workflows/ci.yml`](.github/workflows/ci.yml) — lints, tests (matrix), audits dependencies, then builds and pushes a container image to GHCR.
+- [`.github/workflows/deploy-reusable.yml`](.github/workflows/deploy-reusable.yml) — a reusable `workflow_call` deployment job parameterized by environment.
+- [`.github/workflows/cd.yml`](.github/workflows/cd.yml) — triggered after CI succeeds on `main`, promotes the image through `Development` → `Staging` → `Production`, using protected environments for approvals (see [hol/03](hol/03-Staged-deployments.md)).
+
 ## 📆 Agenda
 
 ### Day 1: 🚀 Getting started
